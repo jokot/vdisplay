@@ -1,0 +1,26 @@
+# Local Claude Code settings
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Rust
+target/
+Cargo.lock.bak
+
+# Node
+node_modules/
+
+# Build output
+build/
+dist/
+out/
+
+# Logs
+*.log
