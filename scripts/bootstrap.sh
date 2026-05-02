@@ -43,11 +43,12 @@ SKIP_ALL=(
 )
 
 # macOS-only skip list.
+# Keep nv-codec-headers — Sunshine compiles its NVENC path on every platform,
+# the headers are tiny, and skipping them breaks the build.
 SKIP_DARWIN=(
   "packaging/linux/"
   "third-party/wayland-protocols"
   "third-party/wlr-protocols"
-  "third-party/nv-codec-headers"
   "third-party/nvapi"
   "third-party/ViGEmClient"
 )
