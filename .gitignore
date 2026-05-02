@@ -24,3 +24,30 @@ out/
 
 # Logs
 *.log
+
+# Upstream subtree submodule clones (populated by scripts/bootstrap.sh,
+# not versioned here — each developer regenerates after fresh clone).
+upstream/client-android/app/src/main/jni/moonlight-core/moonlight-common-c/
+upstream/client-desktop/app/SDL_GameControllerDB/
+upstream/client-desktop/h264bitstream/h264bitstream/
+upstream/client-desktop/libs/
+upstream/client-desktop/moonlight-common-c/moonlight-common-c/
+upstream/client-desktop/qmdnsengine/qmdnsengine/
+upstream/host/packaging/linux/flatpak/deps/flatpak-builder-tools/
+upstream/host/packaging/linux/flatpak/deps/shared-modules/
+upstream/host/third-party/Simple-Web-Server/
+upstream/host/third-party/TPCircularBuffer/
+upstream/host/third-party/ViGEmClient/
+upstream/host/third-party/build-deps/
+upstream/host/third-party/doxyconfig/
+upstream/host/third-party/glad/
+upstream/host/third-party/googletest/
+upstream/host/third-party/inputtino/
+upstream/host/third-party/libdisplaydevice/
+upstream/host/third-party/moonlight-common-c/
+upstream/host/third-party/nanors/
+upstream/host/third-party/nv-codec-headers/
+upstream/host/third-party/nvapi/
+upstream/host/third-party/tray/
+upstream/host/third-party/wayland-protocols/
+upstream/host/third-party/wlr-protocols/
