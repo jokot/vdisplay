@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>G2G Timer</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; color: #fff; font-family: ui-monospace, "SF Mono", Menlo, monospace; overflow: hidden; }
+  #t { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18vw; font-weight: 700; letter-spacing: -0.02em; }
+  #hint { position: absolute; bottom: 1vh; right: 1vw; font-size: 1.2vw; opacity: 0.4; }
+</style>
+</head>
+<body>
+  <div id="t">0000.000</div>
+  <div id="hint">G2G timer — start = page load. Press R to reset.</div>
+<script>
+  const el = document.getElementById('t');
+  let start = performance.now();
+  function tick(now) {
+    const ms = now - start;
+    const sec = Math.floor(ms / 1000);
+    const frac = (ms % 1000).toFixed(0).padStart(3, '0');
+    el.textContent = String(sec).padStart(4, '0') + '.' + frac;
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'r' || e.key === 'R') start = performance.now();
+  });
+</script>
+</body>
+</html>
