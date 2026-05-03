@@ -51,3 +51,19 @@ upstream/host/third-party/nvapi/
 upstream/host/third-party/tray/
 upstream/host/third-party/wayland-protocols/
 upstream/host/third-party/wlr-protocols/
+
+# moonlight-qt build artifacts (qmake generates these in-source — annoying
+# but upstream layout). Build dir is in-source so we cannot just ignore
+# build/; instead enumerate the qmake outputs.
+upstream/client-desktop/.qmake.cache
+upstream/client-desktop/.qmake.stash
+upstream/client-desktop/**/Makefile
+upstream/client-desktop/**/Makefile.Debug
+upstream/client-desktop/**/Makefile.Release
+upstream/client-desktop/**/release/
+upstream/client-desktop/**/debug/
+upstream/client-desktop/**/*.a
+upstream/client-desktop/**/*.o
+upstream/client-desktop/**/Info.plist-e
+upstream/client-desktop/**/qml_qmlcache.qrc
+upstream/client-desktop/app/Moonlight.app/
