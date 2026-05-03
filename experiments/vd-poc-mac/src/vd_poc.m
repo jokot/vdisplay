@@ -8,7 +8,7 @@
 
 #import <Foundation/Foundation.h>
 
-int main(int argc, const char *argv[]) {
+int main(void) {
   @autoreleasepool {
     fprintf(stdout, "[vd-poc] hello, world\n");
     fflush(stdout);
