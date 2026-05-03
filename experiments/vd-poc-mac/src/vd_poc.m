@@ -58,6 +58,27 @@ extern CGError SLSConfigureDisplayEnabled(CGDisplayConfigRef, CGDirectDisplayID,
 extern CGError SLSConfigureDisplayOrigin(CGDisplayConfigRef, CGDirectDisplayID, int32_t, int32_t);
 extern CGError SLSCompleteDisplayConfiguration(CGDisplayConfigRef, CGConfigureOption, uint32_t);
 
+/**
+ * Print the current active display list and return its count.
+ * Used to verify before/after display creation.
+ */
+static uint32_t print_display_state(const char *label) {
+  CGDirectDisplayID displays[32];
+  uint32_t count = 0;
+  CGError err = CGGetActiveDisplayList(32, displays, &count);
+  if (err != kCGErrorSuccess) {
+    fprintf(stderr, "[vd-poc] CGGetActiveDisplayList failed (err=%d)\n", err);
+    return 0;
+  }
+  fprintf(stdout, "[vd-poc] %-7s %u active display(s):", label, count);
+  for (uint32_t i = 0; i < count; i++) {
+    fprintf(stdout, " %u", displays[i]);
+  }
+  fprintf(stdout, "\n");
+  fflush(stdout);
+  return count;
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -90,6 +111,9 @@ int main(void) {
     }
     fprintf(stdout, "[vd-poc] all CGVirtualDisplay classes resolved ✓\n");
     fflush(stdout);
+
+    print_display_state("BEFORE:");
+    print_display_state("AFTER:");
   }
   return 0;
 }
