@@ -67,3 +67,7 @@ upstream/client-desktop/**/*.o
 upstream/client-desktop/**/Info.plist-e
 upstream/client-desktop/**/qml_qmlcache.qrc
 upstream/client-desktop/app/Moonlight.app/
+
+# experiments/ POC binaries
+experiments/**/vd-poc-mac
+experiments/**/*.dSYM/
