@@ -79,6 +79,66 @@ static uint32_t print_display_state(const char *label) {
   return count;
 }
 
+// Static storage so ARC keeps these objects alive for the lifetime of the
+// process. Setting them to nil at exit triggers display destruction.
+static CGVirtualDisplay *g_display = nil;
+static CGVirtualDisplayDescriptor *g_descriptor = nil;
+
+// Hardcoded POC parameters.
+static const int kWidth  = 1920;
+static const int kHeight = 1080;
+static const int kFPS    = 60;
+static const int32_t kExtendOriginX = 2000;
+
+/**
+ * Build the CGVirtualDisplayDescriptor, alloc the display, apply the mode
+ * settings, and stash both in g_display / g_descriptor for keep-alive.
+ *
+ * Returns the new CGDirectDisplayID, or 0 on failure.
+ */
+static uint32_t create_virtual_display(int width, int height, int fps) {
+  CGVirtualDisplayDescriptor *desc = [[CGVirtualDisplayDescriptor alloc] init];
+  desc.name              = @"vd-poc";
+  desc.vendorID          = 0xF0F0;
+  desc.productID         = 0x5678;
+  desc.serialNum         = arc4random();
+  desc.maxPixelsWide     = (unsigned int)width;
+  desc.maxPixelsHigh     = (unsigned int)height;
+  // Fixed 27" physical size — Lumen's value. CGVirtualDisplay rejects
+  // descriptors whose resolution-vs-physical-size ratio implies an
+  // unreasonable pixel density, so DO NOT scale this with width/height.
+  desc.sizeInMillimeters = CGSizeMake(597, 336);
+  desc.whitePoint        = CGPointMake(0.3127, 0.3290);
+  desc.redPrimary        = CGPointMake(0.64, 0.33);
+  desc.greenPrimary      = CGPointMake(0.30, 0.60);
+  desc.bluePrimary       = CGPointMake(0.15, 0.06);
+  [desc setDispatchQueue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0)];
+  desc.terminationHandler = ^(id s, id d) {
+    fprintf(stderr, "[vd-poc] WindowServer terminated our virtual display\n");
+  };
+
+  CGVirtualDisplay *display = [[CGVirtualDisplay alloc] initWithDescriptor:desc];
+  if (!display) {
+    fprintf(stderr, "[vd-poc] initWithDescriptor returned nil (main thread); trying background thread\n");
+    __block CGVirtualDisplay *bg = nil;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+      bg = [[CGVirtualDisplay alloc] initWithDescriptor:desc];
+      dispatch_semaphore_signal(sem);
+    });
+    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 5LL * NSEC_PER_SEC));
+    display = bg;
+  }
+  if (!display || display.displayID == 0) {
+    fprintf(stderr, "[vd-poc] CGVirtualDisplay creation failed\n");
+    return 0;
+  }
+
+  g_display    = display;
+  g_descriptor = desc;
+  return display.displayID;
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -112,8 +172,23 @@ int main(void) {
     fprintf(stdout, "[vd-poc] all CGVirtualDisplay classes resolved ✓\n");
     fflush(stdout);
 
-    print_display_state("BEFORE:");
-    print_display_state("AFTER:");
+    uint32_t before = print_display_state("BEFORE:");
+
+    fprintf(stdout, "[vd-poc] creating virtual display %dx%d@%dHz...\n", kWidth, kHeight, kFPS);
+    fflush(stdout);
+    uint32_t newID = create_virtual_display(kWidth, kHeight, kFPS);
+    if (newID == 0) {
+      fprintf(stderr, "[vd-poc] FATAL: virtual display creation failed\n");
+      return 3;
+    }
+    fprintf(stdout, "[vd-poc] created display id=%u\n", newID);
+    fflush(stdout);
+
+    uint32_t after = print_display_state("AFTER:");
+    if (after <= before) {
+      fprintf(stderr, "[vd-poc] WARN: display count did not increase (before=%u after=%u)\n",
+              before, after);
+    }
   }
   return 0;
 }
