@@ -186,3 +186,17 @@ if (WIN32)
         )
     endif()
 endif ()
+
+# Phase 4: copy vd_helper next to test_sunshine so the
+# MacVirtualDisplayManager integration test (which uses _NSGetExecutablePath
+# + sibling-locate) can find the helper binary at runtime.
+if (APPLE)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:vd_helper>"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/"
+        DEPENDS vd_helper
+        COMMENT "Copying vd_helper next to test_sunshine"
+        VERBATIM
+    )
+endif()
