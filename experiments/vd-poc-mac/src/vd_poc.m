@@ -139,6 +139,31 @@ static uint32_t create_virtual_display(int width, int height, int fps) {
   return display.displayID;
 }
 
+/**
+ * Apply native + half-resolution modes with hiDPI=1. Without the half-res
+ * mode + hiDPI flag, macOS only delivers half the requested pixel
+ * resolution. With them, native mode becomes the retina backing store
+ * and half-res becomes the logical resolution (2x scaling).
+ */
+static BOOL apply_settings(CGVirtualDisplay *display, int width, int height, int fps) {
+  CGVirtualDisplayMode *native = [[CGVirtualDisplayMode alloc] initWithWidth:(unsigned int)width
+                                                                      height:(unsigned int)height
+                                                                 refreshRate:(double)fps];
+  if (!native) {
+    fprintf(stderr, "[vd-poc] failed to build native CGVirtualDisplayMode\n");
+    return NO;
+  }
+  CGVirtualDisplayMode *half = [[CGVirtualDisplayMode alloc] initWithWidth:(unsigned int)(width / 2)
+                                                                    height:(unsigned int)(height / 2)
+                                                               refreshRate:(double)fps];
+
+  CGVirtualDisplaySettings *settings = [[CGVirtualDisplaySettings alloc] init];
+  settings.hiDPI = 1;
+  settings.modes = half ? @[native, half] : @[native];
+
+  return [display applySettings:settings];
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -183,6 +208,14 @@ int main(void) {
     }
     fprintf(stdout, "[vd-poc] created display id=%u\n", newID);
     fflush(stdout);
+
+    if (!apply_settings(g_display, kWidth, kHeight, kFPS)) {
+      fprintf(stderr, "[vd-poc] WARN: applySettings returned NO — continuing\n");
+    } else {
+      fprintf(stdout, "[vd-poc] applied modes (native %dx%d@%d + half-res, hiDPI=1)\n",
+              kWidth, kHeight, kFPS);
+      fflush(stdout);
+    }
 
     uint32_t after = print_display_state("AFTER:");
     if (after <= before) {
