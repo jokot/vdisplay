@@ -164,6 +164,37 @@ static BOOL apply_settings(CGVirtualDisplay *display, int width, int height, int
   return [display applySettings:settings];
 }
 
+/**
+ * Activate the virtual display in WindowServer's display list and seed
+ * its position to the right of the main display. Without this step,
+ * CGGetActiveDisplayList does not see the display.
+ */
+static void sls_activate(uint32_t virtualID) {
+  CGDisplayConfigRef cfg = NULL;
+  CGError err = SLSBeginDisplayConfiguration(&cfg);
+  fprintf(stderr, "[vd-poc] SLSBeginDisplayConfiguration: %d\n", err);
+  if (err != kCGErrorSuccess || !cfg) {
+    fprintf(stderr, "[vd-poc] cannot begin SLS configuration\n");
+    return;
+  }
+
+  err = SLSConfigureDisplayEnabled(cfg, virtualID, true);
+  fprintf(stderr, "[vd-poc] SLSConfigureDisplayEnabled(%u, true): %d\n", virtualID, err);
+
+  CGDirectDisplayID main_id = CGMainDisplayID();
+  size_t main_w = CGDisplayPixelsWide(main_id);
+  int32_t origin_x = (int32_t)main_w > kExtendOriginX ? (int32_t)main_w : kExtendOriginX;
+  err = SLSConfigureDisplayOrigin(cfg, virtualID, origin_x, 0);
+  fprintf(stderr, "[vd-poc] SLSConfigureDisplayOrigin(%u, %d, 0): %d\n",
+          virtualID, origin_x, err);
+
+  err = SLSCompleteDisplayConfiguration(cfg, kCGConfigureForSession, 0);
+  fprintf(stderr, "[vd-poc] SLSCompleteDisplayConfiguration: %d\n", err);
+
+  // Give WindowServer time to process the new display.
+  usleep(500000);
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -216,6 +247,9 @@ int main(void) {
               kWidth, kHeight, kFPS);
       fflush(stdout);
     }
+
+    sls_activate(newID);
+    print_display_state("ACTIVE:");
 
     uint32_t after = print_display_state("AFTER:");
     if (after <= before) {
