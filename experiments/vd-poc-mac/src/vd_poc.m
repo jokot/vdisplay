@@ -90,6 +90,17 @@ static const int kHeight = 1080;
 static const int kFPS    = 60;
 static const int32_t kExtendOriginX = 2000;
 
+static volatile sig_atomic_t g_should_exit = 0;
+
+static void on_signal(int sig) {
+  g_should_exit = 1;
+  // Wake the main thread's CFRunLoop so it can observe the flag.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    CFRunLoopStop(CFRunLoopGetMain());
+  });
+  (void)sig;
+}
+
 /**
  * Build the CGVirtualDisplayDescriptor, alloc the display, apply the mode
  * settings, and stash both in g_display / g_descriptor for keep-alive.
@@ -310,6 +321,15 @@ int main(void) {
             getpid(), (long)v.majorVersion, (long)v.minorVersion, (long)v.patchVersion);
     fflush(stdout);
 
+    // Required for AppKit framework calls below; activation prohibited so we
+    // don't appear in the Dock.
+    [NSApplication sharedApplication];
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
+
+    signal(SIGINT,  on_signal);
+    signal(SIGTERM, on_signal);
+    signal(SIGHUP,  on_signal);
+
     fprintf(stdout, "[vd-poc] checking CGVirtualDisplay availability...\n");
     fflush(stdout);
 
@@ -369,6 +389,16 @@ int main(void) {
     switch_to_native_1x(newID, kWidth, kHeight);
     usleep(500000);
     print_display_state("READY:");
+
+    fprintf(stdout, "[vd-poc] press Ctrl+C (SIGINT) or send SIGTERM to destroy and exit\n");
+    fflush(stdout);
+
+    while (!g_should_exit) {
+      CFRunLoopRunInMode(kCFRunLoopDefaultMode, 1.0, false);
+    }
+
+    fprintf(stdout, "[vd-poc] received signal, shutting down...\n");
+    fflush(stdout);
 
     uint32_t after = print_display_state("AFTER:");
     if (after <= before) {
