@@ -95,6 +95,9 @@ static void on_signal(int sig) {
 // ---------------------------------------------------------------------------
 
 static uint32_t create_virtual_display(int width, int height, int fps) {
+  // fps is consumed in apply_settings(), not here; keep the parameter for the
+  // caller's mental model (all three creation knobs travel together).
+  (void)fps;
   CGVirtualDisplayDescriptor *desc = [[CGVirtualDisplayDescriptor alloc] init];
   desc.name              = @"vdisplay-host";
   desc.vendorID          = 0xF0F0;
@@ -295,6 +298,11 @@ int main(int argc, const char *argv[]) {
       fflush(stdout);
       return 3;
     }
+    // applySettings is best-effort per Lumen pattern: a NO result means the
+    // display was created but mode application failed — Sunshine's encoder
+    // will see whatever default mode the display is in. Logged for ops to
+    // notice but not fatal; the spec's IPC contract has no exit code for this
+    // failure mode (would be 5; deferred to v1.5 if it becomes an issue).
     if (!apply_settings(g_display, width, height, fps)) {
       fprintf(stderr, "[vd_helper] applySettings returned NO\n");
     }

@@ -39,7 +39,12 @@ target_link_libraries(vd_helper PRIVATE
         "-framework AppKit"
 )
 target_link_options(vd_helper PRIVATE
-        "-Wl,-undefined,dynamic_lookup"
+        # Per-symbol weak resolution for SkyLight SLS* private functions
+        # (matches the convention on line 26 above for sunshine's CGPreflight*).
+        "-Wl,-U,_SLSBeginDisplayConfiguration"
+        "-Wl,-U,_SLSConfigureDisplayEnabled"
+        "-Wl,-U,_SLSConfigureDisplayOrigin"
+        "-Wl,-U,_SLSCompleteDisplayConfiguration"
 )
 # Place vd_helper alongside Sunshine in the .app bundle's MacOS dir.
 set_target_properties(vd_helper PROPERTIES
