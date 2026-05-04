@@ -400,10 +400,17 @@ int main(void) {
     fprintf(stdout, "[vd-poc] received signal, shutting down...\n");
     fflush(stdout);
 
-    uint32_t after = print_display_state("AFTER:");
-    if (after <= before) {
-      fprintf(stderr, "[vd-poc] WARN: display count did not increase (before=%u after=%u)\n",
-              before, after);
+    g_display    = nil;   // ARC releases — triggers WindowServer detach
+    g_descriptor = nil;
+    // Allow WindowServer a beat to update its display list.
+    usleep(500000);
+    uint32_t final_count = print_display_state("FINAL:");
+    if (final_count != before) {
+      fprintf(stderr, "[vd-poc] WARN: final display count (%u) differs from before (%u)\n",
+              final_count, before);
+    } else {
+      fprintf(stdout, "[vd-poc] cleanup verified: display count returned to baseline\n");
+      fflush(stdout);
     }
   }
   return 0;
