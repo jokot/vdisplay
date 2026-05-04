@@ -232,8 +232,33 @@ namespace platf::macos {
   }
 
   void MacVirtualDisplayManager::stderr_pump_(int fd) {
-    // Implemented in Task 6.
-    (void)fd;
+    pid_t my_pid;
+    {
+      std::lock_guard<std::mutex> lk(mutex_);
+      my_pid = helper_pid_;  // captured for prefix
+    }
+
+    std::string buf;
+    char read_buf[256];
+    for (;;) {
+      ssize_t n = ::read(fd, read_buf, sizeof(read_buf));
+      if (n <= 0) {
+        // EOF or error: helper exited or fd was closed by teardown().
+        if (!buf.empty()) {
+          BOOST_LOG(debug) << "[vd_helper child=" << my_pid << "] " << buf;
+        }
+        return;
+      }
+      for (ssize_t i = 0; i < n; ++i) {
+        char ch = read_buf[i];
+        if (ch == '\n') {
+          BOOST_LOG(debug) << "[vd_helper child=" << my_pid << "] " << buf;
+          buf.clear();
+        } else {
+          buf.push_back(ch);
+        }
+      }
+    }
   }
 
 }  // namespace platf::macos
