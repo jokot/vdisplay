@@ -54,9 +54,39 @@ namespace platf::macos {
     }
   }
 
-  // teardown(), spawn(), read_line_(), stderr_pump_() are filled in by Tasks 4-6.
   void MacVirtualDisplayManager::teardown() {
-    // Implemented in Task 5.
+    pid_t pid_to_reap = -1;
+    int   fd_to_close = -1;
+    std::thread thread_to_join;
+    {
+      std::lock_guard<std::mutex> lk(mutex_);
+      if (helper_pid_ <= 0) {
+        return;  // nothing to do
+      }
+      pid_to_reap = helper_pid_;
+      fd_to_close = stderr_fd_;
+      thread_to_join = std::move(stderr_thread_);
+      helper_pid_ = -1;
+      display_id_ = 0;
+      stderr_fd_  = -1;
+    }
+    // Outside the mutex so the stderr pump thread (which may be blocked on
+    // read()) can be unblocked by closing its fd, then joined.
+    if (::kill(pid_to_reap, SIGTERM) != 0 && errno != ESRCH) {
+      BOOST_LOG(warning) << "vd_helper: kill(SIGTERM) failed: " << ::strerror(errno);
+    }
+    int status = 0;
+    if (::waitpid(pid_to_reap, &status, 0) < 0) {
+      BOOST_LOG(warning) << "vd_helper: waitpid failed: " << ::strerror(errno);
+    }
+    if (fd_to_close >= 0) {
+      ::close(fd_to_close);
+    }
+    if (thread_to_join.joinable()) {
+      thread_to_join.join();
+    }
+    BOOST_LOG(info) << "vd_helper: virtual display destroyed (pid=" << pid_to_reap
+                    << " status=" << status << ")";
   }
 
   std::string MacVirtualDisplayManager::read_line_(int fd, int timeout_ms) const {
