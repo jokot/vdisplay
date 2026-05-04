@@ -24,3 +24,25 @@ endif()
 
 # Tell linker to dynamically load these symbols at runtime, in case they're unavailable:
 target_link_options(sunshine PRIVATE -Wl,-U,_CGPreflightScreenCaptureAccess -Wl,-U,_CGRequestScreenCaptureAccess)
+
+# Phase 4: vd_helper subprocess for virtual extended display.
+add_executable(vd_helper
+        src/platform/macos/vd_helper.m
+)
+set_source_files_properties(
+        src/platform/macos/vd_helper.m
+        PROPERTIES COMPILE_FLAGS "-fobjc-arc"
+)
+target_link_libraries(vd_helper PRIVATE
+        "-framework CoreGraphics"
+        "-framework Foundation"
+        "-framework AppKit"
+)
+target_link_options(vd_helper PRIVATE
+        "-Wl,-undefined,dynamic_lookup"
+)
+# Place vd_helper alongside Sunshine in the .app bundle's MacOS dir.
+set_target_properties(vd_helper PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+add_dependencies(sunshine vd_helper)
