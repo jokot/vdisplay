@@ -400,9 +400,12 @@ int main(void) {
     fprintf(stdout, "[vd-poc] received signal, shutting down...\n");
     fflush(stdout);
 
-    g_display    = nil;   // ARC releases — triggers WindowServer detach
+    g_display    = nil;   // ARC release; WindowServer detach may be async on macOS 14+ (post-500ms-snapshot)
     g_descriptor = nil;
-    // Allow WindowServer a beat to update its display list.
+    // Allow WindowServer a beat to update its display list. On macOS 26.4.1
+    // (Tahoe), full detach is observed only after process exit, so the FINAL
+    // snapshot below may report a count > baseline — verify externally with
+    // `system_profiler SPDisplaysDataType` from a fresh shell after exit.
     usleep(500000);
     uint32_t final_count = print_display_state("FINAL:");
     if (final_count != before) {
