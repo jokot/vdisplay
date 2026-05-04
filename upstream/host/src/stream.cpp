@@ -34,6 +34,10 @@ extern "C" {
 #include "thread_safe.h"
 #include "utility.h"
 
+#ifdef __APPLE__
+  #include "platform/macos/virtual_display_manager.h"
+#endif
+
 constexpr int IDX_START_A = 0;
 constexpr int IDX_START_B = 1;
 constexpr int IDX_INVALIDATE_REF_FRAMES = 2;
@@ -1955,6 +1959,11 @@ namespace stream {
         }
 
         platf::streaming_will_stop();
+
+#ifdef __APPLE__
+        // Phase 4: tear down the macOS virtual extended display helper.
+        platf::macos::MacVirtualDisplayManager::instance().teardown();
+#endif
       }
 
       BOOST_LOG(debug) << "Session ended"sv;
@@ -1993,6 +2002,15 @@ namespace stream {
 
       // If this is the first session, invoke the platform callbacks
       if (++running_sessions == 1) {
+#ifdef __APPLE__
+        // Phase 4: spawn the macOS virtual extended display helper.
+        // Spawn returning 0 is non-fatal; display_names() falls back
+        // to the main display.
+        platf::macos::MacVirtualDisplayManager::instance().spawn(
+          session.config.monitor.width,
+          session.config.monitor.height,
+          session.config.monitor.framerate);
+#endif
         platf::streaming_will_start();
 #if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
         system_tray::update_tray_playing(proc::proc.get_last_run_app_name());
