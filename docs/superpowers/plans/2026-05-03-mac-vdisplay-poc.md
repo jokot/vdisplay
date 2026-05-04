@@ -63,7 +63,7 @@ Create `experiments/vd-poc-mac/src/vd_poc.m`:
 
 #import <Foundation/Foundation.h>
 
-int main(int argc, const char *argv[]) {
+int main(void) {
   @autoreleasepool {
     fprintf(stdout, "[vd-poc] hello, world\n");
     fflush(stdout);
@@ -222,7 +222,7 @@ extern CGError SLSCompleteDisplayConfiguration(CGDisplayConfigRef, CGConfigureOp
 // main
 // ---------------------------------------------------------------------------
 
-int main(int argc, const char *argv[]) {
+int main(void) {
   @autoreleasepool {
     NSOperatingSystemVersion v = [[NSProcessInfo processInfo] operatingSystemVersion];
     fprintf(stdout, "[vd-poc] pid=%d macOS=%ld.%ld.%ld\n",
