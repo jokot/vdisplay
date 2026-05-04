@@ -262,6 +262,43 @@ static void force_extend_mode(CGDirectDisplayID virtualID) {
   }
 }
 
+/**
+ * The display starts in retina 2x mode (logical resolution = half of pixel
+ * resolution). For streaming workloads this adds compositor overhead. We
+ * search the available modes for the 1x native one (logical == pixel) and
+ * switch to it. Best-effort — logs and continues on failure.
+ */
+static void switch_to_native_1x(CGDirectDisplayID id, int width, int height) {
+  NSDictionary *opts = @{ (NSString *)kCGDisplayShowDuplicateLowResolutionModes: @YES };
+  CFArrayRef modes = CGDisplayCopyAllDisplayModes(id, (CFDictionaryRef)opts);
+  if (!modes) {
+    fprintf(stderr, "[vd-poc] CGDisplayCopyAllDisplayModes returned NULL\n");
+    return;
+  }
+
+  CGDisplayModeRef target = NULL;
+  CFIndex n = CFArrayGetCount(modes);
+  for (CFIndex i = 0; i < n; i++) {
+    CGDisplayModeRef m = (CGDisplayModeRef)CFArrayGetValueAtIndex(modes, i);
+    size_t lw = CGDisplayModeGetWidth(m);
+    size_t lh = CGDisplayModeGetHeight(m);
+    size_t pw = CGDisplayModeGetPixelWidth(m);
+    size_t ph = CGDisplayModeGetPixelHeight(m);
+    if ((int)lw == width && (int)lh == height && pw == lw && ph == lh) {
+      target = m;
+      break;
+    }
+  }
+
+  if (target) {
+    CGError err = CGDisplaySetDisplayMode(id, target, NULL);
+    fprintf(stderr, "[vd-poc] switched to native %dx%d (1x): %d\n", width, height, err);
+  } else {
+    fprintf(stderr, "[vd-poc] native %dx%d 1x mode not found; staying retina 2x\n", width, height);
+  }
+  CFRelease(modes);
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -328,6 +365,10 @@ int main(void) {
       fprintf(stdout, "[vd-poc] no mirror cleanup needed\n");
       fflush(stdout);
     }
+
+    switch_to_native_1x(newID, kWidth, kHeight);
+    usleep(500000);
+    print_display_state("READY:");
 
     uint32_t after = print_display_state("AFTER:");
     if (after <= before) {
