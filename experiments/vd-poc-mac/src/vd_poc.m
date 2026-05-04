@@ -195,6 +195,73 @@ static void sls_activate(uint32_t virtualID) {
   usleep(500000);
 }
 
+/**
+ * macOS may auto-mirror a freshly-created virtual display, which hides
+ * it from CGGetActiveDisplayList. This walks the three mirror-pair
+ * configurations Lumen observed and un-mirrors each, then re-positions
+ * the virtual display to the right of main.
+ *
+ * Caller should re-check CGGetActiveDisplayList after this returns.
+ */
+static void force_extend_mode(CGDirectDisplayID virtualID) {
+  CGDirectDisplayID main_id = CGMainDisplayID();
+
+  // Case 1: main is mirroring our virtual display.
+  if (CGDisplayMirrorsDisplay(main_id) == virtualID) {
+    fprintf(stderr, "[vd-poc] un-mirror: main %u is mirroring virtual %u\n",
+            main_id, virtualID);
+    CGDisplayConfigRef cfg = NULL;
+    CGBeginDisplayConfiguration(&cfg);
+    if (cfg) {
+      CGConfigureDisplayMirrorOfDisplay(cfg, main_id, kCGNullDirectDisplay);
+      CGCompleteDisplayConfiguration(cfg, kCGConfigureForAppOnly);
+    }
+  }
+
+  // Case 2: virtual is in a mirror set.
+  if (CGDisplayIsInMirrorSet(virtualID)) {
+    fprintf(stderr, "[vd-poc] un-mirror: virtual %u is in mirror set\n", virtualID);
+    CGDisplayConfigRef cfg = NULL;
+    CGBeginDisplayConfiguration(&cfg);
+    if (cfg) {
+      CGConfigureDisplayMirrorOfDisplay(cfg, virtualID, kCGNullDirectDisplay);
+      CGCompleteDisplayConfiguration(cfg, kCGConfigureForAppOnly);
+    }
+  }
+
+  // Case 3: virtual is mirroring main.
+  if (CGDisplayMirrorsDisplay(virtualID) != 0) {
+    fprintf(stderr, "[vd-poc] un-mirror: virtual %u is mirroring %u\n",
+            virtualID, CGDisplayMirrorsDisplay(virtualID));
+    CGDisplayConfigRef cfg = NULL;
+    CGBeginDisplayConfiguration(&cfg);
+    if (cfg) {
+      CGConfigureDisplayMirrorOfDisplay(cfg, virtualID, kCGNullDirectDisplay);
+      CGCompleteDisplayConfiguration(cfg, kCGConfigureForAppOnly);
+    }
+  }
+
+  // Re-position virtual to right of main.
+  CGDisplayConfigRef cfg = NULL;
+  CGBeginDisplayConfiguration(&cfg);
+  if (cfg) {
+    size_t main_w = CGDisplayPixelsWide(main_id);
+    CGConfigureDisplayOrigin(cfg, virtualID, (int32_t)main_w, 0);
+    CGCompleteDisplayConfiguration(cfg, kCGConfigureForAppOnly);
+  }
+
+  // If the virtual display became the new main, restore the original main.
+  if (CGMainDisplayID() == virtualID && main_id != virtualID) {
+    fprintf(stderr, "[vd-poc] virtual became main, restoring %u as main\n", main_id);
+    CGDisplayConfigRef cfg2 = NULL;
+    CGBeginDisplayConfiguration(&cfg2);
+    if (cfg2) {
+      CGConfigureDisplayOrigin(cfg2, main_id, 0, 0);
+      CGCompleteDisplayConfiguration(cfg2, kCGConfigureForAppOnly);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -250,6 +317,17 @@ int main(void) {
 
     sls_activate(newID);
     print_display_state("ACTIVE:");
+
+    BOOL needFix = CGDisplayIsInMirrorSet(newID) || CGDisplayMirrorsDisplay(newID) != 0;
+    if (needFix) {
+      fprintf(stderr, "[vd-poc] mirror state detected, forcing extend mode\n");
+      force_extend_mode(newID);
+      usleep(500000);
+      print_display_state("EXTEND:");
+    } else {
+      fprintf(stdout, "[vd-poc] no mirror cleanup needed\n");
+      fflush(stdout);
+    }
 
     uint32_t after = print_display_state("AFTER:");
     if (after <= before) {
