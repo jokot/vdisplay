@@ -10,6 +10,7 @@
 #include "src/platform/macos/av_video.h"
 #include "src/platform/macos/misc.h"
 #include "src/platform/macos/nv12_zero_device.h"
+#include "src/platform/macos/virtual_display_manager.h"
 
 // Avoid conflict between AVFoundation and libavutil both defining AVMediaType
 #define AVMediaType AVMediaType_FFmpeg
@@ -198,7 +199,15 @@ namespace platf {
 
     auto display_array = [AVVideo displayNames];
 
-    display_names.reserve([display_array count]);
+    display_names.reserve([display_array count] + 1);
+
+    // Phase 4: if a virtual extended display is active, prepend it so it
+    // appears as the first/preferred display for streaming.
+    uint32_t vd_id = platf::macos::MacVirtualDisplayManager::instance().get_display_id();
+    if (vd_id != 0) {
+      display_names.emplace_back(std::to_string(vd_id));
+    }
+
     [display_array enumerateObjectsUsingBlock:^(NSDictionary *_Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
       NSString *name = obj[@"name"];
       display_names.emplace_back(name.UTF8String);
