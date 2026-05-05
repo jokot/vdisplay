@@ -38,13 +38,24 @@
       return screen.localizedName;
     }
   }
-  return nil;
+  // Phase 4: virtual displays created via the private CGVirtualDisplay API
+  // are NOT enumerated in [NSScreen screens]. Returning nil here used to
+  // crash +displayNames inside an NSDictionary literal. Fall back to a
+  // synthetic name so the display can still be listed.
+  return [NSString stringWithFormat:@"Display %u", displayID];
 }
 
 - (id)initWithDisplay:(CGDirectDisplayID)displayID frameRate:(int)frameRate {
   self = [super init];
 
   CGDisplayModeRef mode = CGDisplayCopyDisplayMode(displayID);
+  if (mode == NULL) {
+    // Phase 4: CGDisplayCopyDisplayMode returns NULL for some private
+    // CGVirtualDisplay instances. Bail cleanly so the caller (display.mm)
+    // can fall back to the main display instead of dereferencing NULL.
+    NSLog(@"[AVVideo] CGDisplayCopyDisplayMode(%u) returned NULL", displayID);
+    return nil;
+  }
 
   self.displayID = displayID;
   self.pixelFormat = kCVPixelFormatType_32BGRA;
@@ -59,6 +70,10 @@
   CFRelease(mode);
 
   AVCaptureScreenInput *screenInput = [[AVCaptureScreenInput alloc] initWithDisplayID:self.displayID];
+  if (screenInput == nil) {
+    NSLog(@"[AVVideo] AVCaptureScreenInput initWithDisplayID:%u returned nil", displayID);
+    return nil;
+  }
   [screenInput setMinFrameDuration:self.minFrameDuration];
 
   if ([self.session canAddInput:screenInput]) {

@@ -10,6 +10,7 @@
 #include "src/platform/macos/av_video.h"
 #include "src/platform/macos/misc.h"
 #include "src/platform/macos/nv12_zero_device.h"
+#include "src/platform/macos/virtual_display_manager.h"
 
 // Avoid conflict between AVFoundation and libavutil both defining AVMediaType
 #define AVMediaType AVMediaType_FFmpeg
@@ -159,8 +160,30 @@ namespace platf {
 
     auto display = std::make_shared<av_display_t>();
 
-    // Default to main display
+    // Default to main display, but prefer the virtual extended display
+    // if MacVirtualDisplayManager is currently managing one AND the public
+    // CGDisplay APIs can read its mode (i.e. AVCaptureScreenInput will be
+    // able to capture it). On macOS where private CGVirtualDisplay does
+    // not expose a public CGDisplayMode (e.g. macOS 14+/26.x), fall back
+    // to the main display silently (mirror mode) so Sunshine doesn't
+    // dead-end. The config's explicit display_name still overrides via
+    // the loop below.
     display->display_id = CGMainDisplayID();
+    {
+      uint32_t vd_id = platf::macos::MacVirtualDisplayManager::instance().get_display_id();
+      if (vd_id != 0) {
+        CGDisplayModeRef probe = CGDisplayCopyDisplayMode(vd_id);
+        if (probe != NULL) {
+          CFRelease(probe);
+          display->display_id = vd_id;
+          BOOST_LOG(info) << "Phase 4: defaulting to virtual display id="sv << vd_id;
+        } else {
+          BOOST_LOG(warning) << "Phase 4: virtual display id="sv << vd_id
+                             << " has no public CGDisplayMode (capture unsupported on this macOS); "
+                                "falling back to main display"sv;
+        }
+      }
+    }
 
     // Print all displays available with it's name and id
     auto display_array = [AVVideo displayNames];
@@ -198,7 +221,24 @@ namespace platf {
 
     auto display_array = [AVVideo displayNames];
 
-    display_names.reserve([display_array count]);
+    display_names.reserve([display_array count] + 1);
+
+    // Phase 4: if a virtual extended display is active AND it is actually
+    // capturable via the public CGDisplay API (i.e. AVCaptureScreenInput
+    // can read it), prepend it so it becomes the default for streaming.
+    // On macOS where private CGVirtualDisplay does NOT expose a public
+    // CGDisplayMode, do NOT advertise the virtual display here — Sunshine's
+    // capture pipeline would otherwise lock onto an uncapturable ID and
+    // hang on retry. Mirror mode (main display) takes over in that case.
+    uint32_t vd_id = platf::macos::MacVirtualDisplayManager::instance().get_display_id();
+    if (vd_id != 0) {
+      CGDisplayModeRef probe = CGDisplayCopyDisplayMode(vd_id);
+      if (probe != NULL) {
+        CFRelease(probe);
+        display_names.emplace_back(std::to_string(vd_id));
+      }
+    }
+
     [display_array enumerateObjectsUsingBlock:^(NSDictionary *_Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
       NSString *name = obj[@"name"];
       display_names.emplace_back(name.UTF8String);
