@@ -6,6 +6,7 @@
 
 #include "src/logging.h"
 
+#import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 #include <mach-o/dyld.h>
 #include <signal.h>
@@ -34,8 +35,28 @@ namespace platf::macos {
   }
 
   uint32_t MacVirtualDisplayManager::get_display_id() const {
-    std::lock_guard<std::mutex> lk(mutex_);
-    return display_id_;
+    {
+      std::lock_guard<std::mutex> lk(mutex_);
+      if (display_id_ != 0) {
+        return display_id_;
+      }
+    }
+    // Path A: no helper spawned by us — discover a standalone vd_helper
+    // by NSScreen localizedName match. Helper sets descriptor.name to
+    // "vdisplay-host" (see vd_helper.m), and once WindowServer registers
+    // it, NSScreen exposes that name. Live lookup each call so a killed
+    // helper stops being advertised.
+    @autoreleasepool {
+      for (NSScreen *screen in [NSScreen screens]) {
+        if ([screen.localizedName isEqualToString:@"vdisplay-host"]) {
+          NSNumber *num = screen.deviceDescription[@"NSScreenNumber"];
+          if (num) {
+            return [num unsignedIntValue];
+          }
+        }
+      }
+    }
+    return 0;
   }
 
   std::string MacVirtualDisplayManager::helper_path_() const {
@@ -70,23 +91,33 @@ namespace platf::macos {
       display_id_ = 0;
       stderr_fd_  = -1;
     }
-    // Outside the mutex so the stderr pump thread (which may be blocked on
-    // read()) can be unblocked by closing its fd, then joined.
+    // Send SIGTERM synchronously (fast, non-blocking) so the helper starts
+    // exiting immediately. The actual waitpid + thread-join can take >10 s
+    // (WindowServer detach is async), and Sunshine's session-stop has a 10 s
+    // watchdog — so reaping runs on a detached thread to avoid hanging the
+    // caller. The OS reclaims any leftover process at Sunshine exit.
     if (::kill(pid_to_reap, SIGTERM) != 0 && errno != ESRCH) {
       BOOST_LOG(warning) << "vd_helper: kill(SIGTERM) failed: " << ::strerror(errno);
     }
-    int status = 0;
-    if (::waitpid(pid_to_reap, &status, 0) < 0) {
-      BOOST_LOG(warning) << "vd_helper: waitpid failed: " << ::strerror(errno);
-    }
-    if (fd_to_close >= 0) {
-      ::close(fd_to_close);
-    }
-    if (thread_to_join.joinable()) {
-      thread_to_join.join();
-    }
-    BOOST_LOG(info) << "vd_helper: virtual display destroyed (pid=" << pid_to_reap
-                    << " status=" << status << ")";
+    BOOST_LOG(info) << "vd_helper: SIGTERM sent (pid=" << pid_to_reap
+                    << "); reaping in background";
+
+    std::thread([pid_to_reap, fd_to_close,
+                 thread_to_join = std::move(thread_to_join)]() mutable {
+      int status = 0;
+      if (::waitpid(pid_to_reap, &status, 0) < 0) {
+        BOOST_LOG(warning) << "vd_helper: waitpid failed (pid=" << pid_to_reap
+                           << "): " << ::strerror(errno);
+      }
+      if (fd_to_close >= 0) {
+        ::close(fd_to_close);
+      }
+      if (thread_to_join.joinable()) {
+        thread_to_join.join();
+      }
+      BOOST_LOG(info) << "vd_helper: virtual display destroyed (pid=" << pid_to_reap
+                      << " status=" << status << ")";
+    }).detach();
   }
 
   std::string MacVirtualDisplayManager::read_line_(int fd, int timeout_ms) const {
@@ -170,11 +201,26 @@ namespace platf::macos {
         continue;
       }
       if (pid == 0) {
-        // Child: redirect stdout and stderr to pipes, then exec helper.
+        // Child: redirect stdout and stderr to pipes, close every other
+        // inherited fd so the helper can't accidentally hold onto Sunshine's
+        // listening sockets (web UI, RTSP, etc.). Then exec helper.
+        // Detach from Sunshine's session/control terminal — empirically
+        // AVCaptureScreenInput's frame delivery for private CGVirtualDisplay
+        // depends on the parent process context (Terminal-launched helpers
+        // produce capturable displays; Sunshine-as-direct-parent does not).
+        // setsid() puts the helper in its own session, mimicking the
+        // Terminal-launched standalone case that works.
+        ::setsid();
         ::dup2(stdout_pipe[1], STDOUT_FILENO);
         ::dup2(stderr_pipe[1], STDERR_FILENO);
         ::close(stdout_pipe[0]); ::close(stdout_pipe[1]);
         ::close(stderr_pipe[0]); ::close(stderr_pipe[1]);
+        // Close any other inherited fds (e.g., bound sockets).
+        long max_fd = ::sysconf(_SC_OPEN_MAX);
+        if (max_fd <= 0) max_fd = 1024;  // fallback
+        for (int fd = STDERR_FILENO + 1; fd < max_fd; ++fd) {
+          ::close(fd);
+        }
         const char *argv[] = {
           helper.c_str(),
           width_buf,

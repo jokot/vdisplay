@@ -46,8 +46,21 @@ target_link_options(vd_helper PRIVATE
         "-Wl,-U,_SLSConfigureDisplayOrigin"
         "-Wl,-U,_SLSCompleteDisplayConfiguration"
 )
-# Place vd_helper alongside Sunshine in the .app bundle's MacOS dir.
+# Place vd_helper alongside Sunshine. CMake leaves the helper at build/
+# by default; for local .app runs we copy it into Sunshine.app/Contents/MacOS/
+# so MacVirtualDisplayManager::helper_path_() (which sibling-locates via
+# _NSGetExecutablePath) finds it. The packaging step (cpack DragNDrop) will
+# pick up the helper from the bundle dir.
 set_target_properties(vd_helper PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 )
 add_dependencies(sunshine vd_helper)
+
+if (NOT SUNSHINE_BUILD_HOMEBREW)
+    add_custom_command(TARGET sunshine POST_BUILD
+            COMMENT "Copying vd_helper into Sunshine.app/Contents/MacOS/"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                    "$<TARGET_FILE:vd_helper>"
+                    "$<TARGET_FILE_DIR:sunshine>/vd_helper"
+            VERBATIM)
+endif()
