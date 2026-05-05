@@ -4,7 +4,7 @@ Cross-platform virtual external display, low-latency, free and open source.
 
 Mirror or extend your Windows / macOS desktop to another Windows / macOS device or Android phone over your local network. One unified app that works as both **host** and **client**.
 
-> Status: pre-alpha. Forking [Sunshine](https://github.com/LizardByte/Sunshine) (host) and [Moonlight](https://github.com/moonlight-stream) (clients) as base. Phase 0 (validation) complete; Phase 1 (fork bring-up) in progress.
+> Status: pre-alpha. Forking [Sunshine](https://github.com/LizardByte/Sunshine) (host) and [Moonlight](https://github.com/moonlight-stream) (clients) as base. Phase 4 complete — macOS host streams a real virtual extended display to Moonlight clients (manual two-terminal workflow, see below). Phase 5 (Windows host vdisplay port) up next.
 
 ## Goals
 
@@ -68,6 +68,26 @@ cd upstream/client-android && git submodule update --init --recursive
 ```
 
 The unified `launcher/` Qt app is not yet implemented.
+
+## Run (macOS host, virtual extended display)
+
+Phase 4 ships **Path A** — manual two-terminal workflow. The forked Sunshine bundles a `vd_helper` subprocess that creates a private `CGVirtualDisplay`. Run it from a terminal first, then launch Sunshine; Sunshine discovers the helper-created display via NSScreen and streams it as the default capture target.
+
+```bash
+cd upstream/host/build/Sunshine.app/Contents/MacOS
+
+# Terminal 1 — start the virtual display
+./vd_helper 1920 1080 60
+
+# Terminal 2 — start Sunshine (leave config 'output_name' empty)
+./Sunshine
+```
+
+Connect Moonlight (Android, macOS, Windows) — Sunshine streams the virtual display, not the main desktop. Drag windows past the right edge of your main display to move them onto the streamed virtual display. Stop with `Ctrl+C` in each terminal.
+
+If `vd_helper` is not running, Sunshine silently falls back to mirror mode (main display).
+
+**Why two terminals:** Sunshine-spawned `vd_helper` produces displays where `AVCaptureScreenInput` never delivers frames (parent-process context bug, root cause unknown). Auto-spawn deferred to v1.5; a likely fix is migrating capture from `AVCaptureScreenInput` to `ScreenCaptureKit`.
 
 ## Architecture (planned)
 
