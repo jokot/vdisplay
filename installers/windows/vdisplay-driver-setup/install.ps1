@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# ── 1. Locate INF ─────────────────────────────────────────────────────────────
+# --- 1. Locate INF ---
 $inf = Get-ChildItem -Path $DriverDir -Recurse -Filter "MttVDD.inf" -ErrorAction Stop |
        Select-Object -First 1
 if (-not $inf) {
@@ -15,7 +15,7 @@ if (-not $inf) {
     exit 1
 }
 
-# ── 2. Install driver via pnputil ─────────────────────────────────────────────
+# --- 2. Install driver via pnputil ---
 Write-Host "Installing VDD driver: $($inf.FullName)"
 $pnpOut = & pnputil.exe /add-driver $inf.FullName /install 2>&1
 $pnpOut | ForEach-Object { Write-Host $_ }
@@ -35,14 +35,14 @@ if ($oemMatch -match "(oem\d+\.inf)") {
     Write-Host "OEM inf saved for uninstall: $oemName"
 }
 
-# ── 3. Deploy config files ─────────────────────────────────────────────────────
+# --- 3. Deploy config files ---
 $configDir = Join-Path $env:ProgramData "MttVDD"
 New-Item -ItemType Directory -Force -Path $configDir | Out-Null
 Copy-Item -Force $OptionsSrc (Join-Path $configDir "vdd_settings.xml")
 Copy-Item -Force $EdidSrc    (Join-Path $configDir "user_edid.bin")
-Write-Host "Config deployed → $configDir"
+Write-Host "Config deployed to $configDir"
 
-# ── 4. Position virtual monitor right of primary (best-effort) ────────────────
+# --- 4. Position virtual monitor right of primary (best-effort) ---
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -55,7 +55,7 @@ public static class WinDisplayUtil {
     public const uint DISPLAY_DEVICE_ACTIVE  = 0x00000001u;
     public const uint DISPLAY_DEVICE_PRIMARY = 0x00000004u;
 
-    // DEVMODE for display — explicit field offsets match DEVMODEA layout
+    // DEVMODE for display - explicit field offsets matching DEVMODEA layout
     [StructLayout(LayoutKind.Explicit, CharSet = CharSet.Ansi)]
     public struct DEVMODE {
         [FieldOffset(0),   MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
@@ -65,8 +65,8 @@ public static class WinDisplayUtil {
         [FieldOffset(36)]  public ushort Size;
         [FieldOffset(38)]  public ushort DriverExtra;
         [FieldOffset(40)]  public uint   Fields;
-        [FieldOffset(44)]  public int    PosX;        // dmPosition.x
-        [FieldOffset(48)]  public int    PosY;        // dmPosition.y
+        [FieldOffset(44)]  public int    PosX;
+        [FieldOffset(48)]  public int    PosY;
         [FieldOffset(52)]  public uint   DisplayOrientation;
         [FieldOffset(56)]  public uint   DisplayFixedOutput;
         [FieldOffset(60)]  public short  Color;
@@ -116,7 +116,6 @@ public static class WinDisplayUtil {
         string lpszDeviceName, ref DEVMODE lpDevMode,
         IntPtr hwnd, uint dwflags, IntPtr lParam);
 
-    // Overload for the final "apply all" call (both pointer args null)
     [DllImport("user32.dll", EntryPoint = "ChangeDisplaySettingsExA")]
     public static extern int ChangeDisplaySettingsExApply(
         IntPtr device, IntPtr mode, IntPtr hwnd, uint flags, IntPtr param);
@@ -138,12 +137,14 @@ function New-Devmode {
 function Wait-VirtualAdapter([int]$TimeoutSec = 30) {
     $deadline = [DateTime]::Now.AddSeconds($TimeoutSec)
     while ([DateTime]::Now -lt $deadline) {
-        $dev = New-DisplayDevice; $i = [uint32]0
+        $dev = New-DisplayDevice
+        $i = [uint32]0
         while ([WinDisplayUtil]::EnumDisplayDevicesA($null, $i, [ref]$dev, 0)) {
             if ($dev.DeviceString -match "MttVDD|Virtual Display") {
                 return $dev.DeviceName
             }
-            $dev = New-DisplayDevice; $i++
+            $dev = New-DisplayDevice
+            $i++
         }
         Start-Sleep -Seconds 2
     }
@@ -155,29 +156,36 @@ try {
     $vAdapter = Wait-VirtualAdapter -TimeoutSec 30
 
     if (-not $vAdapter) {
-        Write-Warning "Virtual adapter not detected — skipping position step. Set it manually in Display Settings."
-    } else {
+        Write-Warning "Virtual adapter not detected - skipping position step. Set it manually in Display Settings."
+    }
+    else {
         Write-Host "Virtual adapter: $vAdapter"
 
         # Find primary display width
         $primaryWidth = 0
-        $dev = New-DisplayDevice; $i = [uint32]0
+        $dev = New-DisplayDevice
+        $i = [uint32]0
         while ([WinDisplayUtil]::EnumDisplayDevicesA($null, $i, [ref]$dev, 0)) {
             if ($dev.StateFlags -band [WinDisplayUtil]::DISPLAY_DEVICE_PRIMARY) {
                 $dm = New-Devmode
-                if ([WinDisplayUtil]::EnumDisplaySettingsA($dev.DeviceName,
-                        [WinDisplayUtil]::ENUM_CURRENT_SETTINGS, [ref]$dm)) {
+                if ([WinDisplayUtil]::EnumDisplaySettingsA(
+                        $dev.DeviceName,
+                        [WinDisplayUtil]::ENUM_CURRENT_SETTINGS,
+                        [ref]$dm)) {
                     $primaryWidth = [int]$dm.PelsWidth
                 }
                 break
             }
-            $dev = New-DisplayDevice; $i++
+            $dev = New-DisplayDevice
+            $i++
         }
 
         # Position virtual adapter at (primaryWidth, 0)
         $vdm = New-Devmode
-        [WinDisplayUtil]::EnumDisplaySettingsA($vAdapter,
-            [WinDisplayUtil]::ENUM_CURRENT_SETTINGS, [ref]$vdm) | Out-Null
+        [WinDisplayUtil]::EnumDisplaySettingsA(
+            $vAdapter,
+            [WinDisplayUtil]::ENUM_CURRENT_SETTINGS,
+            [ref]$vdm) | Out-Null
         $vdm.PosX   = $primaryWidth
         $vdm.PosY   = 0
         $vdm.Fields = [WinDisplayUtil]::DM_POSITION
@@ -188,14 +196,16 @@ try {
                 ([WinDisplayUtil]::CDS_UPDATEREGISTRY -bor [WinDisplayUtil]::CDS_NORESET),
                 [IntPtr]::Zero)
         if ($r -ne 0) {
-            Write-Warning "ChangeDisplaySettingsEx returned $r — position not applied."
-        } else {
+            Write-Warning "ChangeDisplaySettingsEx returned $r - position not applied."
+        }
+        else {
             [WinDisplayUtil]::ChangeDisplaySettingsExApply(
                 [IntPtr]::Zero, [IntPtr]::Zero, [IntPtr]::Zero, 0, [IntPtr]::Zero) | Out-Null
             Write-Host "Virtual monitor positioned at ($primaryWidth, 0)."
         }
     }
-} catch {
+}
+catch {
     Write-Warning "Position step skipped: $_"
 }
 
