@@ -25,19 +25,25 @@ under MIT license. We do NOT modify the driver source. We add only:
 | `mttvdd.cat` | Signed security catalog (Microsoft WHQL) |
 | `vdd_settings.xml` | Driver configuration — monitor count, resolutions, refresh rates |
 
-## Monitor name (`vdisplay-host`) — configuration notes
+## Monitor name (`vdisplay-host`) — configuration
 
-The `vdd_settings.xml` schema does not expose a `<friendlyname>` field.
-The monitor friendly name shown in Windows Display Settings is determined by
-the EDID descriptor embedded in the driver. Options:
+The `vdd_settings.xml` schema has no `<friendlyname>` field. The monitor
+friendly name is set via a custom EDID binary:
 
-1. **Custom EDID binary** — set `<CustomEdid>true</CustomEdid>` in
-   `vdd_settings.xml` and provide `user_edid.bin` with Monitor Name
-   Descriptor (tag `0xFC`) set to `vdisplay-host`. Investigated in Task 3.
-2. **Sunshine discovery fallback** — if custom EDID cannot be made to work,
-   `WinVirtualDisplayManager::get_display_id()` can also match by device
-   instance path prefix (`Root\MttVDD`) as a secondary strategy, with a
-   warning that the user should not rename the driver device.
+- `options.xml` sets `<CustomEdid>true</CustomEdid>`
+- `user_edid.bin` is a hand-crafted 128-byte EDID 1.4 block with:
+  - Detailed Timing Descriptor for 1920×1080@60 (pixel clock 148.5 MHz)
+  - Monitor Name Descriptor (tag `0xFC`) = `vdisplay-host` (13 chars)
+  - Monitor Range Limits (24–75 Hz V, 15–83 kHz H, 150 MHz max clock)
+
+`install.ps1` copies `options.xml` → `%ProgramData%\MttVDD\vdd_settings.xml`
+and `user_edid.bin` → `%ProgramData%\MttVDD\user_edid.bin` at install time.
+
+## Position (right of primary)
+
+The driver creates the monitor; Windows assigns initial position arbitrarily.
+`install.ps1` calls `Set-DisplayConfig` after install to place the virtual
+monitor at `(primary_width, 0)` — i.e. immediately right of the primary.
 
 ## Upgrade procedure
 
