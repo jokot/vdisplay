@@ -1,2 +1,3 @@
 # Build artifact — produced by `makensis vdisplay-driver-setup.nsi`
 vdisplay-driver-setup.exe
+vdisplay-driver-setup-next.exe

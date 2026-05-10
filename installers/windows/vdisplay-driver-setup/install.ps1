@@ -90,31 +90,43 @@ public static class DevNodeCreator {
         new Guid("{4D36E968-E325-11CE-BFC1-08002BE10318}");
 
     // Returns true = created, false = already existed, throws on real failure.
+    // DeviceName for DICD_GENERATE_ID on local machine = device name without
+    // "Root\" prefix; Windows generates instance ID as ROOT\<name>\0000.
     public static bool EnsureRootDevice() {
         Guid g = DisplayGuid;
         IntPtr set = SetupDiCreateDeviceInfoList(ref g, IntPtr.Zero);
-        if (set == new IntPtr(-1))
-            throw new Win32Exception(Marshal.GetLastWin32Error(),
-                "SetupDiCreateDeviceInfoList");
+        if (set == new IntPtr(-1)) {
+            int e = Marshal.GetLastWin32Error();
+            throw new Exception("SetupDiCreateDeviceInfoList Win32=" + e +
+                " (0x" + e.ToString("X8") + "): " + new Win32Exception(e).Message);
+        }
         try {
             var dd = new SP_DEVINFO_DATA();
             dd.cbSize = (uint)Marshal.SizeOf(dd);
-            if (!SetupDiCreateDeviceInfoW(set, "ROOT\\MttVDD", ref g,
+            // Pass just "MttVDD" — SetupAPI prepends ROOT\ to form ROOT\MttVDD\0000
+            if (!SetupDiCreateDeviceInfoW(set, "MttVDD", ref g,
                     "Virtual Display Driver", IntPtr.Zero,
                     DICD_GENERATE_ID, ref dd)) {
-                int err = Marshal.GetLastWin32Error();
-                if (err == 0xB7) return false; // ERROR_ALREADY_EXISTS
-                throw new Win32Exception(err, "SetupDiCreateDeviceInfo");
+                int e = Marshal.GetLastWin32Error();
+                if (e == 0xB7) return false; // ERROR_ALREADY_EXISTS
+                throw new Exception("SetupDiCreateDeviceInfo Win32=" + e +
+                    " (0x" + e.ToString("X8") + "): " + new Win32Exception(e).Message);
             }
             // Hardware ID stored as REG_MULTI_SZ (double-null-terminated Unicode)
             byte[] hwId = Encoding.Unicode.GetBytes("Root\\MttVDD\0\0");
             if (!SetupDiSetDeviceRegistryPropertyW(set, ref dd,
-                    SPDRP_HARDWAREID, hwId, (uint)hwId.Length))
-                throw new Win32Exception(Marshal.GetLastWin32Error(),
-                    "SetupDiSetDeviceRegistryProperty");
-            if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE, set, ref dd))
-                throw new Win32Exception(Marshal.GetLastWin32Error(),
-                    "SetupDiCallClassInstaller");
+                    SPDRP_HARDWAREID, hwId, (uint)hwId.Length)) {
+                int e = Marshal.GetLastWin32Error();
+                throw new Exception("SetupDiSetDeviceRegistryProperty Win32=" + e +
+                    " (0x" + e.ToString("X8") + "): " + new Win32Exception(e).Message);
+            }
+            if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE, set, ref dd)) {
+                int e = Marshal.GetLastWin32Error();
+                // ERROR_DI_DO_DEFAULT (0xE0000230) means "proceed with default" -- not fatal
+                if ((uint)e != 0xE0000230u)
+                    throw new Exception("SetupDiCallClassInstaller Win32=" + e +
+                        " (0x" + e.ToString("X8") + "): " + new Win32Exception(e).Message);
+            }
             return true;
         }
         finally {
