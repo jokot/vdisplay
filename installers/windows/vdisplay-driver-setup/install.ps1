@@ -40,6 +40,24 @@ if ($oemMatch -match "(oem\d+\.inf)") {
     Write-Host "OEM inf saved for uninstall: $oemName"
 }
 
+# --- 2b. Instantiate root-enumerated device ---
+# pnputil /add-driver only installs onto existing matching devices.
+# Root\MttVDD is a software-only device that must be explicitly created;
+# pnputil /add-device tells PnP to enumerate it so the driver binds to it.
+$existingHwId = & $pnputil /enum-devices /class Display 2>&1 |
+    Where-Object { $_ -match "Root\\MttVDD" }
+if ($existingHwId) {
+    Write-Host "Virtual device Root\MttVDD already present - skipping creation."
+}
+else {
+    Write-Host "Creating virtual device node Root\MttVDD ..."
+    $devOut = & $pnputil /add-device "Root\MttVDD" 2>&1
+    $devOut | ForEach-Object { Write-Host $_ }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "pnputil /add-device returned $LASTEXITCODE (device may already exist)."
+    }
+}
+
 # --- 3. Deploy config files ---
 $configDir = Join-Path $env:ProgramData "MttVDD"
 New-Item -ItemType Directory -Force -Path $configDir | Out-Null
