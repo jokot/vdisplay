@@ -60,41 +60,45 @@ public static class WinDisplayUtil {
     public const uint DISPLAY_DEVICE_ACTIVE  = 0x00000001u;
     public const uint DISPLAY_DEVICE_PRIMARY = 0x00000004u;
 
-    // DEVMODE for display - explicit field offsets matching DEVMODEA layout
-    [StructLayout(LayoutKind.Explicit, CharSet = CharSet.Ansi)]
+    // DEVMODE for display - sequential layout matches DEVMODEA field order.
+    // LayoutKind.Explicit cannot be used with managed string fields (CLR restriction),
+    // so we use Sequential with fields declared in the exact DEVMODEA order.
+    // With CharSet.Ansi, ByValTStr fields are 1-byte-aligned char arrays; the
+    // resulting offsets are identical to the C struct layout.
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     public struct DEVMODE {
-        [FieldOffset(0),   MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
-        public string DeviceName;
-        [FieldOffset(32)]  public ushort SpecVersion;
-        [FieldOffset(34)]  public ushort DriverVersion;
-        [FieldOffset(36)]  public ushort Size;
-        [FieldOffset(38)]  public ushort DriverExtra;
-        [FieldOffset(40)]  public uint   Fields;
-        [FieldOffset(44)]  public int    PosX;
-        [FieldOffset(48)]  public int    PosY;
-        [FieldOffset(52)]  public uint   DisplayOrientation;
-        [FieldOffset(56)]  public uint   DisplayFixedOutput;
-        [FieldOffset(60)]  public short  Color;
-        [FieldOffset(62)]  public short  Duplex;
-        [FieldOffset(64)]  public short  YResolution;
-        [FieldOffset(66)]  public short  TTOption;
-        [FieldOffset(68)]  public short  Collate;
-        [FieldOffset(70),  MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
-        public string FormName;
-        [FieldOffset(102)] public ushort LogPixels;
-        [FieldOffset(104)] public uint   BitsPerPel;
-        [FieldOffset(108)] public uint   PelsWidth;
-        [FieldOffset(112)] public uint   PelsHeight;
-        [FieldOffset(116)] public uint   DisplayFlags;
-        [FieldOffset(120)] public uint   DisplayFrequency;
-        [FieldOffset(124)] public uint   ICMMethod;
-        [FieldOffset(128)] public uint   ICMIntent;
-        [FieldOffset(132)] public uint   MediaType;
-        [FieldOffset(136)] public uint   DitherType;
-        [FieldOffset(140)] public uint   Reserved1;
-        [FieldOffset(144)] public uint   Reserved2;
-        [FieldOffset(148)] public uint   PanningWidth;
-        [FieldOffset(152)] public uint   PanningHeight;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string DeviceName;      // offset   0 (32 bytes)
+        public ushort SpecVersion;     // offset  32
+        public ushort DriverVersion;   // offset  34
+        public ushort Size;            // offset  36
+        public ushort DriverExtra;     // offset  38
+        public uint   Fields;          // offset  40
+        public int    PosX;            // offset  44  dmPosition.x
+        public int    PosY;            // offset  48  dmPosition.y
+        public uint   DisplayOrientation;  // offset 52
+        public uint   DisplayFixedOutput;  // offset 56
+        public short  Color;           // offset  60
+        public short  Duplex;          // offset  62
+        public short  YResolution;     // offset  64
+        public short  TTOption;        // offset  66
+        public short  Collate;         // offset  68
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string FormName;        // offset  70 (32 bytes)
+        public ushort LogPixels;       // offset 102
+        public uint   BitsPerPel;      // offset 104
+        public uint   PelsWidth;       // offset 108
+        public uint   PelsHeight;      // offset 112
+        public uint   DisplayFlags;    // offset 116
+        public uint   DisplayFrequency; // offset 120
+        public uint   ICMMethod;       // offset 124
+        public uint   ICMIntent;       // offset 128
+        public uint   MediaType;       // offset 132
+        public uint   DitherType;      // offset 136
+        public uint   Reserved1;       // offset 140
+        public uint   Reserved2;       // offset 144
+        public uint   PanningWidth;    // offset 148
+        public uint   PanningHeight;   // offset 152
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
