@@ -40,22 +40,102 @@ if ($oemMatch -match "(oem\d+\.inf)") {
     Write-Host "OEM inf saved for uninstall: $oemName"
 }
 
-# --- 2b. Instantiate root-enumerated device ---
+# --- 2b. Instantiate root-enumerated device via SetupAPI ---
 # pnputil /add-driver only installs onto existing matching devices.
-# Root\MttVDD is a software-only device that must be explicitly created;
-# pnputil /add-device tells PnP to enumerate it so the driver binds to it.
-$existingHwId = & $pnputil /enum-devices /class Display 2>&1 |
-    Where-Object { $_ -match "Root\\MttVDD" }
-if ($existingHwId) {
-    Write-Host "Virtual device Root\MttVDD already present - skipping creation."
-}
-else {
-    Write-Host "Creating virtual device node Root\MttVDD ..."
-    $devOut = & $pnputil /add-device "Root\MttVDD" 2>&1
-    $devOut | ForEach-Object { Write-Host $_ }
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "pnputil /add-device returned $LASTEXITCODE (device may already exist)."
+# pnputil /add-device is not available on all Windows versions.
+# Use SetupAPI DIF_REGISTERDEVICE to create the Root\MttVDD node; PnP then
+# auto-matches and installs the driver already in the store.
+Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class DevNodeCreator {
+    private const uint DICD_GENERATE_ID   = 0x00000001u;
+    private const uint DIF_REGISTERDEVICE = 0x00000019u;
+    private const uint SPDRP_HARDWAREID   = 0x00000001u;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SP_DEVINFO_DATA {
+        public uint   cbSize;
+        public Guid   ClassGuid;
+        public uint   DevInst;
+        public IntPtr Reserved;
     }
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    private static extern IntPtr SetupDiCreateDeviceInfoList(
+        ref Guid ClassGuid, IntPtr hwnd);
+
+    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetupDiCreateDeviceInfoW(
+        IntPtr DevInfoSet, string DeviceName, ref Guid ClassGuid,
+        string Description, IntPtr hwnd, uint Flags,
+        ref SP_DEVINFO_DATA DevInfoData);
+
+    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetupDiSetDeviceRegistryPropertyW(
+        IntPtr DevInfoSet, ref SP_DEVINFO_DATA DevInfoData,
+        uint Property, byte[] Buffer, uint BufferSize);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    private static extern bool SetupDiCallClassInstaller(
+        uint DifCode, IntPtr DevInfoSet, ref SP_DEVINFO_DATA DevInfoData);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    private static extern bool SetupDiDestroyDeviceInfoList(IntPtr DevInfoSet);
+
+    private static readonly Guid DisplayGuid =
+        new Guid("{4D36E968-E325-11CE-BFC1-08002BE10318}");
+
+    // Returns true = created, false = already existed, throws on real failure.
+    public static bool EnsureRootDevice() {
+        Guid g = DisplayGuid;
+        IntPtr set = SetupDiCreateDeviceInfoList(ref g, IntPtr.Zero);
+        if (set == new IntPtr(-1))
+            throw new Win32Exception(Marshal.GetLastWin32Error(),
+                "SetupDiCreateDeviceInfoList");
+        try {
+            var dd = new SP_DEVINFO_DATA();
+            dd.cbSize = (uint)Marshal.SizeOf(dd);
+            if (!SetupDiCreateDeviceInfoW(set, "ROOT\\MttVDD", ref g,
+                    "Virtual Display Driver", IntPtr.Zero,
+                    DICD_GENERATE_ID, ref dd)) {
+                int err = Marshal.GetLastWin32Error();
+                if (err == 0xB7) return false; // ERROR_ALREADY_EXISTS
+                throw new Win32Exception(err, "SetupDiCreateDeviceInfo");
+            }
+            // Hardware ID stored as REG_MULTI_SZ (double-null-terminated Unicode)
+            byte[] hwId = Encoding.Unicode.GetBytes("Root\\MttVDD\0\0");
+            if (!SetupDiSetDeviceRegistryPropertyW(set, ref dd,
+                    SPDRP_HARDWAREID, hwId, (uint)hwId.Length))
+                throw new Win32Exception(Marshal.GetLastWin32Error(),
+                    "SetupDiSetDeviceRegistryProperty");
+            if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE, set, ref dd))
+                throw new Win32Exception(Marshal.GetLastWin32Error(),
+                    "SetupDiCallClassInstaller");
+            return true;
+        }
+        finally {
+            SetupDiDestroyDeviceInfoList(set);
+        }
+    }
+}
+'@
+
+Write-Host "Ensuring Root\MttVDD device node exists..."
+try {
+    if ([DevNodeCreator]::EnsureRootDevice()) {
+        Write-Host "Device node Root\MttVDD created - triggering PnP scan..."
+        & $pnputil /scan-devices 2>&1 | Out-Null
+    }
+    else {
+        Write-Host "Device node Root\MttVDD already exists."
+    }
+}
+catch {
+    Write-Warning "Device node creation failed: $_"
 }
 
 # --- 3. Deploy config files ---
