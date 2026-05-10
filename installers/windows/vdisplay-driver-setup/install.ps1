@@ -16,8 +16,13 @@ if (-not $inf) {
 }
 
 # --- 2. Install driver via pnputil ---
+# Resolve full path: Sysnative alias lets a 32-bit host reach real System32.
+$pnputil = "$env:SystemRoot\System32\pnputil.exe"
+if (-not (Test-Path $pnputil)) {
+    $pnputil = "$env:SystemRoot\Sysnative\pnputil.exe"
+}
 Write-Host "Installing VDD driver: $($inf.FullName)"
-$pnpOut = & pnputil.exe /add-driver $inf.FullName /install 2>&1
+$pnpOut = & $pnputil /add-driver $inf.FullName /install 2>&1
 $pnpOut | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -ne 0) {
     Write-Error "pnputil exited $LASTEXITCODE"
