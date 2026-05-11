@@ -3,6 +3,7 @@
  * @brief Definitions for the Windows display base code.
  */
 // standard includes
+#include <algorithm>
 #include <cmath>
 #include <thread>
 
@@ -33,6 +34,7 @@ typedef enum _D3DKMT_GPU_PREFERENCE_QUERY_STATE: DWORD {
 
 #include "display.h"
 #include "misc.h"
+#include "virtual_display_manager.h"
 #include "src/config.h"
 #include "src/display_device.h"
 #include "src/logging.h"
@@ -548,6 +550,15 @@ namespace platf::dxgi {
     }
 
     if (!output) {
+      // If the requested display is the virtual one, give a targeted hint.
+      auto &vdm = platf::win::WinVirtualDisplayManager::instance();
+      if (vdm.probe_driver_installed()) {
+        auto vd_name = vdm.get_display_name();
+        if (!vd_name.empty() && (display_name.empty() || display_name == vd_name)) {
+          BOOST_LOG(warning) << "Virtual display driver is installed but DXGI cannot capture it. "
+                                "Check Device Manager for ROOT\\MTTVDD\\0000."sv;
+        }
+      }
       BOOST_LOG(error) << "Failed to locate an output device"sv;
       return -1;
     }
@@ -1101,6 +1112,20 @@ namespace platf {
         // Don't include the display in the list if we can't actually capture it
         if (desc.AttachedToDesktop && dxgi::test_dxgi_duplication(adapter, output, true)) {
           display_names.emplace_back(std::move(device_name));
+        }
+      }
+    }
+
+    // If the VDD driver is installed and its display is capturable, move it
+    // to the front so it is the default selection in Sunshine's UI.
+    auto &vdm = platf::win::WinVirtualDisplayManager::instance();
+    if (vdm.probe_driver_installed()) {
+      auto vd_name = vdm.get_display_name();
+      if (!vd_name.empty()) {
+        auto it = std::find(display_names.begin(), display_names.end(), vd_name);
+        if (it != display_names.end() && it != display_names.begin()) {
+          std::rotate(display_names.begin(), it, it + 1);
+          BOOST_LOG(debug) << "Virtual display moved to front of display list: "sv << vd_name;
         }
       }
     }
