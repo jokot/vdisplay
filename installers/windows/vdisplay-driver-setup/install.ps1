@@ -52,9 +52,12 @@ using System.Runtime.InteropServices;
 using System.Text;
 
 public static class DevNodeCreator {
-    private const uint DICD_GENERATE_ID   = 0x00000001u;
-    private const uint DIF_REGISTERDEVICE = 0x00000019u;
-    private const uint SPDRP_HARDWAREID   = 0x00000001u;
+    private const uint DICD_GENERATE_ID       = 0x00000001u;
+    private const uint DIF_INSTALLDEVICE      = 0x00000002u;
+    private const uint DIF_SELECTBESTCOMPATDRV = 0x00000017u;
+    private const uint DIF_REGISTERDEVICE     = 0x00000019u;
+    private const uint SPDRP_HARDWAREID       = 0x00000001u;
+    private const uint SPDIT_COMPATDRIVER     = 0x00000002u;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct SP_DEVINFO_DATA {
@@ -75,9 +78,22 @@ public static class DevNodeCreator {
         ref SP_DEVINFO_DATA DevInfoData);
 
     [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetupDiOpenDeviceInfoW(
+        IntPtr DevInfoSet, string DeviceInstanceId, IntPtr hwnd,
+        uint OpenFlags, ref SP_DEVINFO_DATA DevInfoData);
+
+    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool SetupDiSetDeviceRegistryPropertyW(
         IntPtr DevInfoSet, ref SP_DEVINFO_DATA DevInfoData,
         uint Property, byte[] Buffer, uint BufferSize);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    private static extern bool SetupDiBuildDriverInfoList(
+        IntPtr DevInfoSet, ref SP_DEVINFO_DATA DevInfoData, uint DriverType);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    private static extern bool SetupDiSelectBestCompatDrv(
+        IntPtr DevInfoSet, ref SP_DEVINFO_DATA DevInfoData);
 
     [DllImport("setupapi.dll", SetLastError = true)]
     private static extern bool SetupDiCallClassInstaller(
@@ -89,9 +105,30 @@ public static class DevNodeCreator {
     private static readonly Guid DisplayGuid =
         new Guid("{4D36E968-E325-11CE-BFC1-08002BE10318}");
 
-    // Returns true = created, false = already existed, throws on real failure.
-    // DeviceName for DICD_GENERATE_ID on local machine = device name without
-    // "Root\" prefix; Windows generates instance ID as ROOT\<name>\0000.
+    private static void InstallDriver(IntPtr set, ref SP_DEVINFO_DATA dd) {
+        // Build compatible driver list from the driver store, select best, install.
+        if (!SetupDiBuildDriverInfoList(set, ref dd, SPDIT_COMPATDRIVER)) {
+            int e = Marshal.GetLastWin32Error();
+            throw new Exception("SetupDiBuildDriverInfoList Win32=" + e +
+                " (0x" + e.ToString("X8") + "): " + new Win32Exception(e).Message);
+        }
+        if (!SetupDiSelectBestCompatDrv(set, ref dd)) {
+            int e = Marshal.GetLastWin32Error();
+            throw new Exception("SetupDiSelectBestCompatDrv Win32=" + e +
+                " (0x" + e.ToString("X8") + "): " + new Win32Exception(e).Message);
+        }
+        if (!SetupDiCallClassInstaller(DIF_INSTALLDEVICE, set, ref dd)) {
+            int e = Marshal.GetLastWin32Error();
+            if ((uint)e != 0xE0000230u)
+                throw new Exception("SetupDiCallClassInstaller(INSTALLDEVICE) Win32=" + e +
+                    " (0x" + e.ToString("X8") + "): " + new Win32Exception(e).Message);
+        }
+    }
+
+    // Returns true = created new node, false = already existed.
+    // In both cases, attempts to install the driver from the store.
+    // DeviceName for DICD_GENERATE_ID on local machine must omit "Root\";
+    // Windows generates the instance ID as ROOT\<name>\0000.
     public static bool EnsureRootDevice() {
         Guid g = DisplayGuid;
         IntPtr set = SetupDiCreateDeviceInfoList(ref g, IntPtr.Zero);
@@ -103,31 +140,46 @@ public static class DevNodeCreator {
         try {
             var dd = new SP_DEVINFO_DATA();
             dd.cbSize = (uint)Marshal.SizeOf(dd);
-            // Pass just "MttVDD" — SetupAPI prepends ROOT\ to form ROOT\MttVDD\0000
+            bool created;
+
             if (!SetupDiCreateDeviceInfoW(set, "MttVDD", ref g,
                     "Virtual Display Driver", IntPtr.Zero,
                     DICD_GENERATE_ID, ref dd)) {
                 int e = Marshal.GetLastWin32Error();
-                if (e == 0xB7) return false; // ERROR_ALREADY_EXISTS
-                throw new Exception("SetupDiCreateDeviceInfo Win32=" + e +
-                    " (0x" + e.ToString("X8") + "): " + new Win32Exception(e).Message);
-            }
-            // Hardware ID stored as REG_MULTI_SZ (double-null-terminated Unicode)
-            byte[] hwId = Encoding.Unicode.GetBytes("Root\\MttVDD\0\0");
-            if (!SetupDiSetDeviceRegistryPropertyW(set, ref dd,
-                    SPDRP_HARDWAREID, hwId, (uint)hwId.Length)) {
-                int e = Marshal.GetLastWin32Error();
-                throw new Exception("SetupDiSetDeviceRegistryProperty Win32=" + e +
-                    " (0x" + e.ToString("X8") + "): " + new Win32Exception(e).Message);
-            }
-            if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE, set, ref dd)) {
-                int e = Marshal.GetLastWin32Error();
-                // ERROR_DI_DO_DEFAULT (0xE0000230) means "proceed with default" -- not fatal
-                if ((uint)e != 0xE0000230u)
-                    throw new Exception("SetupDiCallClassInstaller Win32=" + e +
+                if (e != 0xB7) // not ERROR_ALREADY_EXISTS
+                    throw new Exception("SetupDiCreateDeviceInfo Win32=" + e +
                         " (0x" + e.ToString("X8") + "): " + new Win32Exception(e).Message);
+                // Device already exists -- open it so we can install the driver.
+                created = false;
+                dd = new SP_DEVINFO_DATA();
+                dd.cbSize = (uint)Marshal.SizeOf(dd);
+                if (!SetupDiOpenDeviceInfoW(set, "ROOT\\MTTVDD\\0000",
+                        IntPtr.Zero, 0, ref dd)) {
+                    int e2 = Marshal.GetLastWin32Error();
+                    throw new Exception("SetupDiOpenDeviceInfo Win32=" + e2 +
+                        " (0x" + e2.ToString("X8") + "): " + new Win32Exception(e2).Message);
+                }
+            } else {
+                created = true;
+                // Hardware ID stored as REG_MULTI_SZ (double-null-terminated Unicode)
+                byte[] hwId = Encoding.Unicode.GetBytes("Root\\MttVDD\0\0");
+                if (!SetupDiSetDeviceRegistryPropertyW(set, ref dd,
+                        SPDRP_HARDWAREID, hwId, (uint)hwId.Length)) {
+                    int e = Marshal.GetLastWin32Error();
+                    throw new Exception("SetupDiSetDeviceRegistryProperty Win32=" + e +
+                        " (0x" + e.ToString("X8") + "): " + new Win32Exception(e).Message);
+                }
+                if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE, set, ref dd)) {
+                    int e = Marshal.GetLastWin32Error();
+                    if ((uint)e != 0xE0000230u)
+                        throw new Exception("SetupDiCallClassInstaller(REGISTERDEVICE) Win32=" + e +
+                            " (0x" + e.ToString("X8") + "): " + new Win32Exception(e).Message);
+                }
             }
-            return true;
+
+            // Install driver from store onto the device (new or existing).
+            InstallDriver(set, ref dd);
+            return created;
         }
         finally {
             SetupDiDestroyDeviceInfoList(set);
