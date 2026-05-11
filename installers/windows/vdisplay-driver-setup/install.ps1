@@ -40,7 +40,14 @@ if ($oemMatch -match "(oem\d+\.inf)") {
     Write-Host "OEM inf saved for uninstall: $oemName"
 }
 
-# --- 2b. Instantiate root-enumerated device via SetupAPI ---
+# --- 2b. Deploy config files before device creation so the driver reads them on first init ---
+$configDir = Join-Path $env:ProgramData "MttVDD"
+New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+Copy-Item -Force $OptionsSrc (Join-Path $configDir "vdd_settings.xml")
+Copy-Item -Force $EdidSrc    (Join-Path $configDir "user_edid.bin")
+Write-Host "Config deployed to $configDir"
+
+# --- 2c. Instantiate root-enumerated device via SetupAPI ---
 # pnputil /add-driver only installs onto existing matching devices.
 # pnputil /add-device is not available on all Windows versions.
 # Use SetupAPI DIF_REGISTERDEVICE to create the Root\MttVDD node; PnP then
@@ -202,14 +209,7 @@ catch {
     Write-Warning "Device node creation failed: $_"
 }
 
-# --- 3. Deploy config files ---
-$configDir = Join-Path $env:ProgramData "MttVDD"
-New-Item -ItemType Directory -Force -Path $configDir | Out-Null
-Copy-Item -Force $OptionsSrc (Join-Path $configDir "vdd_settings.xml")
-Copy-Item -Force $EdidSrc    (Join-Path $configDir "user_edid.bin")
-Write-Host "Config deployed to $configDir"
-
-# --- 4. Position virtual monitor right of primary (best-effort) ---
+# --- 3. Position virtual monitor right of primary (best-effort) ---
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
