@@ -38,8 +38,12 @@ Section "Install" SEC_INSTALL
 
     ; Run install.ps1 (already admin — NSIS RequestExecutionLevel admin)
     DetailPrint "Running install.ps1 ..."
+    ; Use Sysnative to reach 64-bit PowerShell from 32-bit NSIS process.
+    ; Without this, WOW64 redirects powershell.exe to SysWOW64 (32-bit),
+    ; which cannot find pnputil.exe (64-bit only in real System32).
     nsExec::ExecToLog \
-        'powershell.exe -NoProfile -ExecutionPolicy Bypass \
+        '$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe \
+         -NoProfile -ExecutionPolicy Bypass \
          -File "$INSTDIR\install.ps1" \
          -DriverDir "$INSTDIR\vendored" \
          -OptionsSrc "$INSTDIR\options.xml" \
