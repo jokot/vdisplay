@@ -267,6 +267,8 @@
     "max_bitrate_desc": "The maximum bitrate (in Kbps) that Sunshine will encode the stream at. If set to 0, it will always use the bitrate requested by Moonlight.",
     "minimum_fps_target": "Minimum FPS Target",
     "minimum_fps_target_desc": "The lowest effective FPS a stream can reach. A value of 0 is treated as roughly half of the stream's FPS. A setting of 20 is recommended if you stream 24 or 30fps content.",
+    "virtual_display_enabled": "Virtual Display (MttVDD)",
+    "virtual_display_enabled_desc": "When enabled, Sunshine will warn on stream start if the MttVDD virtual display driver is not installed. Install vdisplay-driver-setup.exe to enable virtual display support.",
     "min_log_level": "Log Level",
     "min_log_level_0": "Verbose",
     "min_log_level_1": "Debug",

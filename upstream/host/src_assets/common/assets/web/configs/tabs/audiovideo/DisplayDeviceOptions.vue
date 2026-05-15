@@ -241,6 +241,11 @@ function addRemappingEntry() {
           </div>
         </div>
       </div>
+
+      <!-- Virtual display driver -->
+      <div class="mb-3">
+        <Checkbox id="virtual_display_enabled" locale-prefix="config" v-model="config.virtual_display_enabled" :default="false" />
+      </div>
     </template>
     <template #freebsd>
     </template>

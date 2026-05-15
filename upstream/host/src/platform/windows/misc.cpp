@@ -41,12 +41,14 @@
 // local includes
 #include "misc.h"
 #include "nvprefs/nvprefs_interface.h"
+#include "src/config.h"
 #include "src/entry_handler.h"
 #include "src/globals.h"
 #include "src/logging.h"
 #include "src/platform/common.h"
 #include "src/utility.h"
 #include "utf_utils.h"
+#include "virtual_display_manager.h"
 
 // UDP_SEND_MSG_SIZE was added in the Windows 10 20H1 SDK
 #ifndef UDP_SEND_MSG_SIZE
@@ -1149,6 +1151,14 @@ namespace platf {
       }
     }
     enable_mouse_keys();
+
+    if (config::video.virtual_display_enabled) {
+      auto &vdm = platf::win::WinVirtualDisplayManager::instance();
+      if (!vdm.probe_driver_installed()) {
+        BOOST_LOG(warning) << "virtual_display_enabled is set but the MttVDD driver is not installed. "
+                              "Run vdisplay-driver-setup.exe as Administrator."sv;
+      }
+    }
   }
 
   void enable_mouse_keys() {
